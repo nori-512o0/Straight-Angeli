@@ -31,17 +31,21 @@ def parse_news_article(article_url):
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # ニュース詳細ページの本文エリア（一般的なクラスやタグを広く探索）
-        article_body = soup.find("article") or soup.find(class_=["news-detail", "article-body", "content", "entry-content", "detail"])
+        # 本文が含まれていそうなエリアを幅広く候補として探す
+        article_body = (
+            soup.find("article") or 
+            soup.find(class_=re.compile(r'detail|article|content|news-body|post', re.I)) or 
+            soup.find("main")
+        )
+        
         if not article_body:
-            # 見つからない場合はメインコンテンツ付近を取得
-            article_body = soup.find("main") or soup.find("body")
+            article_body = soup.find("body")
 
         # 不要なナビゲーションやヘッダー・フッター等を除外
-        for unwanted in article_body.find_all(["nav", "footer", "header"]):
+        for unwanted in article_body.find_all(["nav", "footer", "header", "aside", "script", "style"]):
             unwanted.decompose()
 
-        # 画像の絶対パス化
+        # 画像の絶対パス化ときれいなHTML化
         for img in article_body.find_all("img"):
             src = img.get("src", "")
             if not src:
@@ -53,7 +57,7 @@ def parse_news_article(article_url):
             img.replace_with(BeautifulSoup(img_html, "html.parser"))
 
         detailed_date = ""
-        date_tag = soup.find(class_=["date", "time"])
+        date_tag = soup.find(class_=re.compile(r'date|time', re.I))
         if date_tag:
             detailed_date = date_tag.get_text(strip=True)
 
@@ -88,11 +92,9 @@ def main():
         seen_urls = set()
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            # 「/news/」を含み、かつトップページや単なる「/news/」自体ではないリンクを対象にする
             if "/news/" in href and href.strip("/") != "news":
                 article_url = urljoin(BASE_URL, href).split('?')[0]
                 
-                # リストのページ送りや余計なアンカーを除外
                 if "page" in article_url or "#" in href:
                     continue
                 
@@ -101,7 +103,6 @@ def main():
                 seen_urls.add(article_url)
                 
                 title = a.get_text(strip=True)
-                # メニュー名やボタン、日付だけのものを除外
                 if not title or title in ["View All", "次へ", "前へ", "NEWS", "Schedule", "ALL", "LIVE / EVENT", "RELEASE", "TV", "RADIO", "OTHER"] or len(title) < 4:
                     continue
                 if title.isdigit() or re.match(r'^\d{4}[./]\d{2}[./]\d{2}$', title):
