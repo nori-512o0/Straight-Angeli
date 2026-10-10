@@ -31,7 +31,7 @@ def parse_news_article(article_url):
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # 本文が含まれていそうなエリアを幅広く候補として探す
+        # 本文エリアを幅広く候補として探す
         article_body = (
             soup.find("article") or 
             soup.find(class_=re.compile(r'detail|article|content|news-body|post', re.I)) or 
@@ -45,13 +45,21 @@ def parse_news_article(article_url):
         for unwanted in article_body.find_all(["nav", "footer", "header", "aside", "script", "style"]):
             unwanted.decompose()
 
-        # 画像の絶対パス化ときれいなHTML化
+        # 画像の処理（LINEアイコンやシェア用アイコンなどを判定して除外する）
         for img in article_body.find_all("img"):
             src = img.get("src", "")
             if not src:
                 img.decompose()
                 continue
+            
             img_url = urljoin(BASE_URL, src)
+            
+            # LINEアイコンやシェア・SNS・ロゴなどの不要な画像を除外
+            lower_url = img_url.lower()
+            if any(keyword in lower_url for keyword in ["line", "icon", "share", "sns", "twitter", "facebook", "logo"]):
+                img.decompose()
+                continue
+
             safe_url = escape(img_url)
             img_html = f'<p><a href="{safe_url}"><img src="{safe_url}" alt="" style="max-width:100%;"></a></p>'
             img.replace_with(BeautifulSoup(img_html, "html.parser"))
