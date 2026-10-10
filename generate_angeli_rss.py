@@ -32,13 +32,13 @@ def parse_news_article(article_url):
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # 本文エリアの特定（公式サイトの構造に合わせる）
+        # 本文エリアの特定
         article_body = soup.find("article") or soup.find(class_=["news-detail", "article-body", "content", "entry-content"])
         if not article_body:
             return "<p>本文の取得に失敗しました。</p>", ""
 
-        # 不要なナビゲーションやシェアボタンなどを除外
-        for unwanted in article_body.find_all(["nav", "footer", "header", class_ := lambda x: x and any(c in x for c in ['share', 'social', 'nav', 'back'])]:
+        # 不要な要素を除外
+        for unwanted in article_body.find_all(["nav", "footer", "header"]):
             unwanted.decompose()
 
         # 画像の絶対パス化と綺麗なHTML化
@@ -88,10 +88,8 @@ def main():
         soup = BeautifulSoup(res.text, "html.parser")
         
         seen_urls = set()
-        # 一覧ページ内のリンクを走査
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            # 詳細ページのURLパターン（/news/数字/）のみを厳密に抽出
             if re.search(r'/news/\d+/?$', href):
                 article_url = urljoin(BASE_URL, href).split('?')[0]
                 if article_url in seen_urls:
@@ -99,14 +97,11 @@ def main():
                 seen_urls.add(article_url)
                 
                 title = a.get_text(strip=True)
-                # 「View All」やページネーション、ボタン系の文字、短すぎるものを完全に除外
                 if not title or title in ["View All", "次へ", "前へ", "NEWS", "Schedule"] or len(title) < 5:
                     continue
-                # 数字だけのもの（ページ番号など）も除外
                 if title.isdigit():
                     continue
                 
-                # 既知の記事ならキャッシュを流用（高速化）
                 if article_url in known_items:
                     print(f"  -> [高速スキップ] 既知のニュース: {title}")
                     cached_item = known_items[article_url]
@@ -115,11 +110,9 @@ def main():
                         feed_updated = cached_item["updated"]
                     continue
                 
-                # 新規記事の場合は詳細ページにアクセスして本文と画像を取得
                 content_html, detailed_date = parse_news_article(article_url)
                 time.sleep(1)
                 
-                # 日付の決定
                 date_str = detailed_date
                 if not date_str:
                     parent = a.parent
@@ -188,7 +181,6 @@ def main():
         f.write(xml)
     print(f"[完了] フィードを生成しました (feeds/{feed_filename})")
     
-    # 履歴を保存
     state["items"] = new_items
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
