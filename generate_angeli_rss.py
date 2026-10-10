@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://straight-angeli.com"
 NEWS_URL = f"{BASE_URL}/news/"
-FEED_BASE_URL = "https://nori-512o0.github.io/Straight-Angeli/"  # ご自身の公開URLに合わせてください
+FEED_BASE_URL = "https://nori-512o0.github.io/Straight-Angeli/"
 STATE_FILE = "last_angeli_items.json"
 
 def parse_date_to_iso(date_str):
@@ -25,23 +25,23 @@ def parse_date_to_iso(date_str):
     return datetime.now(timezone.utc).isoformat()
 
 def parse_news_article(article_url):
-    """詳細ページにアクセスし、本文や画像、日付を取得する"""
     print(f"  -> [詳細取得中] {article_url}")
     try:
         res = requests.get(article_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # 本文エリアの特定
-        article_body = soup.find("article") or soup.find(class_=["news-detail", "article-body", "content", "entry-content"])
+        # ニュース詳細ページの本文エリア（一般的なクラスやタグを広く探索）
+        article_body = soup.find("article") or soup.find(class_=["news-detail", "article-body", "content", "entry-content", "detail"])
         if not article_body:
-            return "<p>本文の取得に失敗しました。</p>", ""
+            # 見つからない場合はメインコンテンツ付近を取得
+            article_body = soup.find("main") or soup.find("body")
 
-        # 不要な要素を除外
+        # 不要なナビゲーションやヘッダー・フッター等を除外
         for unwanted in article_body.find_all(["nav", "footer", "header"]):
             unwanted.decompose()
 
-        # 画像の絶対パス化と綺麗なHTML化
+        # 画像の絶対パス化
         for img in article_body.find_all("img"):
             src = img.get("src", "")
             if not src:
@@ -52,7 +52,6 @@ def parse_news_article(article_url):
             img_html = f'<p><a href="{safe_url}"><img src="{safe_url}" alt="" style="max-width:100%;"></a></p>'
             img.replace_with(BeautifulSoup(img_html, "html.parser"))
 
-        # 詳細ページ内から日付を取得
         detailed_date = ""
         date_tag = soup.find(class_=["date", "time"])
         if date_tag:
@@ -67,7 +66,6 @@ def main():
     print("=== [処理開始] Straight Angeli ニュースのRSS生成を開始します ===")
     os.makedirs("feeds", exist_ok=True)
     
-    # 履歴データの読み込み
     state = {}
     if os.path.exists(STATE_FILE):
         print("-> [読込] 過去の履歴データを読み込みます...")
@@ -90,16 +88,23 @@ def main():
         seen_urls = set()
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            if re.search(r'/news/\d+/?$', href):
+            # 「/news/」を含み、かつトップページや単なる「/news/」自体ではないリンクを対象にする
+            if "/news/" in href and href.strip("/") != "news":
                 article_url = urljoin(BASE_URL, href).split('?')[0]
+                
+                # リストのページ送りや余計なアンカーを除外
+                if "page" in article_url or "#" in href:
+                    continue
+                
                 if article_url in seen_urls:
                     continue
                 seen_urls.add(article_url)
                 
                 title = a.get_text(strip=True)
-                if not title or title in ["View All", "次へ", "前へ", "NEWS", "Schedule"] or len(title) < 5:
+                # メニュー名やボタン、日付だけのものを除外
+                if not title or title in ["View All", "次へ", "前へ", "NEWS", "Schedule", "ALL", "LIVE / EVENT", "RELEASE", "TV", "RADIO", "OTHER"] or len(title) < 4:
                     continue
-                if title.isdigit():
+                if title.isdigit() or re.match(r'^\d{4}[./]\d{2}[./]\d{2}$', title):
                     continue
                 
                 if article_url in known_items:
@@ -110,6 +115,7 @@ def main():
                         feed_updated = cached_item["updated"]
                     continue
                 
+                print(f"  -> [新規検出] タイトル: {title}")
                 content_html, detailed_date = parse_news_article(article_url)
                 time.sleep(1)
                 
@@ -148,7 +154,6 @@ def main():
     if not feed_updated:
         feed_updated = datetime.now(timezone.utc).isoformat()
         
-    # Atom XMLの構築
     entries_xml = ""
     for item in new_items:
         entries_xml += f"""
