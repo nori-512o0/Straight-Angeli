@@ -3,7 +3,6 @@ name: Generate and deploy Straight Angeli RSS
 on:
   workflow_dispatch:
   schedule:
-    # 10分ごとに自動実行して新着情報をチェックします
     - cron: '*/10 * * * *'
 
 permissions:
