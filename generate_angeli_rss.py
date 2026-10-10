@@ -31,7 +31,7 @@ def parse_news_article(article_url):
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # 本文エリアを幅広く候補として探す
+        # 本文エリアを特定
         article_body = (
             soup.find("article") or 
             soup.find(class_=re.compile(r'detail|article|content|news-body|post', re.I)) or 
@@ -41,11 +41,20 @@ def parse_news_article(article_url):
         if not article_body:
             article_body = soup.find("body")
 
-        # 不要なナビゲーションやヘッダー・フッター等を除外
+        # 不要なナビゲーション、フッター、ヘッダー、サイドバー等を除外
         for unwanted in article_body.find_all(["nav", "footer", "header", "aside", "script", "style"]):
             unwanted.decompose()
 
-        # 画像の処理（LINEアイコンやシェア用アイコンなどを判定して除外する）
+        # 「SHARE」などのSNS共有エリアやアイコン群をクラス名やテキストから徹底的に探して削除
+        for share_elem in article_body.find_all(class_=re.compile(r'share|social|sns|icon|button|back|top', re.I)):
+            share_elem.decompose()
+
+        # テキストで「SHARE」と書かれている見出しやその周辺も削除
+        for text_elem in article_body.find_all(["h2", "h3", "h4", "div", "p"]):
+            if "SHARE" in text_elem.get_text():
+                text_elem.decompose()
+
+        # 残った画像の絶対パス化と綺麗なHTML化
         for img in article_body.find_all("img"):
             src = img.get("src", "")
             if not src:
@@ -53,10 +62,10 @@ def parse_news_article(article_url):
                 continue
             
             img_url = urljoin(BASE_URL, src)
-            
-            # LINEアイコンやシェア・SNS・ロゴなどの不要な画像を除外
             lower_url = img_url.lower()
-            if any(keyword in lower_url for keyword in ["line", "icon", "share", "sns", "twitter", "facebook", "logo"]):
+            
+            # アイコンやロゴ等の不要な画像を追加で除外
+            if any(keyword in lower_url for keyword in ["line", "icon", "share", "sns", "twitter", "facebook", "x_", "logo", "qr"]):
                 img.decompose()
                 continue
 
