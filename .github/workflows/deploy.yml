@@ -3,7 +3,7 @@ name: Generate and deploy Straight Angeli RSS
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '3,13,23,33,43,53 * * * *'
 
 permissions:
   contents: read
